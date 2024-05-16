@@ -1,6 +1,7 @@
 import requests
 import datetime
 from serpapi import GoogleSearch
+import re
 
 
 # Set up OpenAI API credentials
@@ -152,8 +153,77 @@ def get_most_expensive_hotel(destination, check_in_date, check_out_date, max_pri
     return most_expensive_affordable_hotel
 
     
+def generate_daily_plan(destination, start_date, end_date, trip_type):
+    prompt = f"I am planning a {trip_type} trip to {destination} from {start_date.strftime('%B %d')} to {end_date.strftime('%B %d')}. Please suggest a detailed daily itinerary. At the end provide exactly 4 descriptions that could visually summarize the entire trip. Make the descriptions clear and detailed. Please use this format for your illustrate: \nvisually summarize: \n1. A picture of the Eiffel Tower at sunset, symbolizing the iconic landmark of Paris.\n2. A snapshot of colorful flowers in full bloom at the gardens of Versailles, representing the beauty of French landscapes.\n3. An image of the Seine River with historic bridges in the background, showcasing the romantic charm of Paris.\n4. A shot of street artists painting in Montmartre, capturing the artistic spirit and bohemian vibe of the neighborhood."
+    try:
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {openai_api_key}"
+            },
+            json={
+                "messages": [
+                    {"role": "system", "content": "You are a travel guide and a creative advisor for visual content."},
+                    {"role": "user", "content": prompt}
+                ],
+                "model": "gpt-3.5-turbo"
+            }
+        )
+        
+        if response.status_code == 200:
+            data = response.json()
+            suggestion_text = data["choices"][0]["message"]["content"].strip()
+            # Use regex to split the content at the visually summarize section (case-insensitive)
+            parts = re.split(r'(?i)visually summarize:', suggestion_text, 1)
+            plan_content = parts[0].strip() if len(parts) > 1 else suggestion_text
+            image_descriptions = extract_image_descriptions(parts[1].strip()) if len(parts) > 1 else []
+            return plan_content, image_descriptions
+        else:
+            raise Exception(f"Failed to fetch from OpenAI API. Status code: {response.status_code}, Response: {response.text}")
     
-    
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        return None, []
+
+def extract_image_descriptions(image_descriptions_content):
+    descriptions = []
+    lines = image_descriptions_content.split('\n')
+    for line in lines:
+        if line.strip().startswith(("1.", "2.", "3.", "4.")):
+            description = line.split(". ", 1)[1] if ". " in line else line
+            descriptions.append(description)
+    return descriptions
+
+
+def generate_images(descriptions):
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "Content-Type": "application/json"
+    }
+    images = []
+    for description in descriptions:
+        response = requests.post(
+            "https://api.openai.com/v1/images/generations",
+            headers=headers,
+            json={
+                "prompt": description,
+                "n": 1,
+                "size": "1024x1024"
+            }
+        )
+        if response.status_code == 200:
+            data = response.json()
+            try:
+                images.append(data['data'][0]['url'])
+            except KeyError:
+                print("No URL found in the response:", data)
+                images.append(None)
+        else:
+            print(f"Failed to generate image with status code {response.status_code}: {response.text}")
+            images.append(None)
+    return images
+
 
 def main():
     start_date_str, end_date_str, budget, trip_type = get_user_input()
@@ -216,20 +286,35 @@ def main():
                 print()
                 
         # Allow the user to choose a destination
-        chosen_index = int(input("Enter the number of your desired destination: "))
-        if 1 <= chosen_index <= len(destination_info):
-            chosen_destination = list(destination_info.values())[chosen_index - 1]
-            chosen_destination_name = chosen_destination["destination_name"]
-            flight_price = chosen_destination.get("flight_price", "N/A")
-            hotel_rate_per_night = chosen_destination.get("hotel_rate_per_night", "N/A")
-            total_price = flight_price + hotel_rate_per_night * num_days if flight_price != "N/A" and hotel_rate_per_night != "N/A" else "N/A"
+        while True:
+            chosen_index = int(input("Enter the number of your desired destination: "))
+            try:
+                if 1 <= chosen_index <= len(destination_info):
+                    chosen_destination = list(destination_info.values())[chosen_index - 1]
+                    chosen_destination_name = chosen_destination["destination_name"]
+                    flight_price = chosen_destination.get("flight_price", "N/A")
+                    hotel_rate_per_night = chosen_destination.get("hotel_rate_per_night", "N/A")
+                    total_price = flight_price + hotel_rate_per_night * num_days if flight_price != "N/A" and hotel_rate_per_night != "N/A" else "N/A"
 
-            print(f"Chosen Destination: {chosen_destination_name}, Total Price: ${total_price}")
-        else:
-            print("Invalid choice. Please enter a valid number.")
-
-             
-             
+                    print(f"Chosen Destination: {chosen_destination_name}, Total Price: ${total_price}")
+                    break
+                else:
+                    print("Invalid choice. Please enter a valid number.")
+            except ValueError:
+                        print("Invalid input. Please enter a number.")
+                        
+        daily_plan, image_descriptions = generate_daily_plan(chosen_destination_name, start_date, end_date, trip_type)
+        print("Here is your daily plan for the trip:")
+        print(daily_plan)
+        
+        images = generate_images(image_descriptions)
+        for img in images:
+            if img:
+                print(img)
+            else:
+                print("No image generated for this prompt.")
+        
+                
     except ValueError as e:
         print(f"Error: {e}")
 
