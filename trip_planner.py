@@ -196,26 +196,40 @@ def main():
         
         # Print the destination details with the according flight price and hotel details
         print("Destination Details:")
-        for airport_code, info in destination_info.items():
+        for index, (airport_code, info) in enumerate(destination_info.items(), start=1):
             destination_name = info["destination_name"]
             flight_price = info.get("flight_price", "N/A")
             hotel_name = info.get("hotel_name", "N/A")
             hotel_rate_per_night = info.get("hotel_rate_per_night", "N/A")
             hotel_error = info.get("hotel_error", None)  # Get the stored error message, if any
-
-
-            total_money_spend = info["flight_price"] + info["hotel_rate_per_night"] * num_days
+            total_price = flight_price + hotel_rate_per_night * num_days if flight_price != "N/A" and hotel_rate_per_night != "N/A" else "N/A"
             
-            print(f"{destination_name} ({airport_code}):")
+            print(f"{index}. {destination_name} ({airport_code}):")
             print(f"  Flight Price: ${flight_price}")
             if hotel_error:
                 print(f"  Hotel Error: {hotel_error}")  # Print the error message if it exists
+                print()
             else:
                 print(f"  Hotel Name: {hotel_name}")
                 print(f"  Hotel Rate per Night: ${hotel_rate_per_night}")
-                print(f"  Total Amount of money: ${total_money_spend}")
+                print(f"  Total Price: ${total_price}")
+                print()
+                
+        # Allow the user to choose a destination
+        chosen_index = int(input("Enter the number of your desired destination: "))
+        if 1 <= chosen_index <= len(destination_info):
+            chosen_destination = list(destination_info.values())[chosen_index - 1]
+            chosen_destination_name = chosen_destination["destination_name"]
+            flight_price = chosen_destination.get("flight_price", "N/A")
+            hotel_rate_per_night = chosen_destination.get("hotel_rate_per_night", "N/A")
+            total_price = flight_price + hotel_rate_per_night * num_days if flight_price != "N/A" and hotel_rate_per_night != "N/A" else "N/A"
 
-        
+            print(f"Chosen Destination: {chosen_destination_name}, Total Price: ${total_price}")
+        else:
+            print("Invalid choice. Please enter a valid number.")
+
+             
+             
     except ValueError as e:
         print(f"Error: {e}")
 
