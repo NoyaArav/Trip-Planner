@@ -13,7 +13,7 @@ serpapi_api_key = "e0bdc813b6c92ed8d4b6521577f17ab892d5a09e397d74b1fb405bfb838cb
 def get_user_input():
     start_date_str = input("Enter the start date of your trip (YYYY-MM-DD): ")
     end_date_str = input("Enter the end date of your trip (YYYY-MM-DD): ")
-    budget = input("Enter your total budget in USD for the trip: ")
+    budget = float(input("Enter your total budget in USD for the trip: "))
     trip_type = input("Enter the type of trip (ski/beach/city): ")
     
     return start_date_str, end_date_str, budget, trip_type
@@ -103,6 +103,57 @@ def get_flight_price_insights(departure_id, arrival_id, departure_date, return_d
         print(f"Error: {str(e)}")
         return None
     
+    
+    
+def get_most_expensive_hotel(destination, check_in_date, check_out_date, max_price, num_days):
+    max_price_per_night = max_price / num_days
+    min_price_per_night = int(max_price_per_night * 0.65)  # Set minimum price to 75% of the max price per night to avoid unnecessary serpapi searches
+
+    params = {
+        "engine": "google_hotels",
+        "q": destination,
+        "check_in_date": check_in_date.strftime("%Y-%m-%d"),
+        "check_out_date": check_out_date.strftime("%Y-%m-%d"),
+        "adults": "1",
+        "currency": "USD",
+        "hl": "en",
+        "min_price": min_price_per_night,  # Minimum price per night
+        # "max_price": max_price_per_night,  # Maximum price per night
+        "sort_by": "3",  # Sort by lowest price
+        "api_key": serpapi_api_key
+    }
+
+    search = GoogleSearch(params)
+    results = search.get_dict()
+    found_properties = results.get("properties", [])
+    
+    if not found_properties:
+        return "No hotels found for the given destination and dates."
+    
+    cheapest_hotel = found_properties[0]
+    cheapest_rate_per_night = cheapest_hotel.get("rate_per_night", {}).get("extracted_lowest", 0)
+    
+    if cheapest_rate_per_night > max_price_per_night:
+        return "The budget is not enough for flight and hotel."
+    
+    most_expensive_affordable_hotel = None
+    
+    # Assuming hotels are sorted by price ascending
+    for property in found_properties:
+        price_per_night = property.get("rate_per_night", {}).get("extracted_lowest", 0)
+        if price_per_night <= max_price_per_night:
+            most_expensive_affordable_hotel = {
+                "name": property.get("name"),
+                "rate_per_night": price_per_night
+            }
+        else:
+            break
+
+    return most_expensive_affordable_hotel
+
+    
+    
+    
 
 def main():
     start_date_str, end_date_str, budget, trip_type = get_user_input()
@@ -131,21 +182,39 @@ def main():
             if flight_price is not None:
                 info["flight_price"] = flight_price
                 
-                ### Add hotel findings later ###
-                
+                # The hotel budget is the amount of money left after taking the cheepest flight
+                hotel_budget = budget - flight_price
+                # Find the most expensive hotel within the hotel budget
+                hotel = get_most_expensive_hotel(destination_name, start_date, end_date, hotel_budget, num_days)
+                if isinstance(hotel, dict):  # Check if the result is a dictionary
+                    info["hotel_name"] = hotel["name"]
+                    info["hotel_rate_per_night"] = hotel["rate_per_night"]
+                else:
+                    info["hotel_error"] = hotel  # Store the error message if it's not a dictionary
                 
         
         
-        # Print the destination details with the according flight price 
+        # Print the destination details with the according flight price and hotel details
         print("Destination Details:")
         for airport_code, info in destination_info.items():
             destination_name = info["destination_name"]
             flight_price = info.get("flight_price", "N/A")
-            
+            hotel_name = info.get("hotel_name", "N/A")
+            hotel_rate_per_night = info.get("hotel_rate_per_night", "N/A")
+            hotel_error = info.get("hotel_error", None)  # Get the stored error message, if any
+
+
+            total_money_spend = info["flight_price"] + info["hotel_rate_per_night"] * num_days
             
             print(f"{destination_name} ({airport_code}):")
             print(f"  Flight Price: ${flight_price}")
-            
+            if hotel_error:
+                print(f"  Hotel Error: {hotel_error}")  # Print the error message if it exists
+            else:
+                print(f"  Hotel Name: {hotel_name}")
+                print(f"  Hotel Rate per Night: ${hotel_rate_per_night}")
+                print(f"  Total Amount of money: ${total_money_spend}")
+
         
     except ValueError as e:
         print(f"Error: {e}")
